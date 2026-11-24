@@ -11,8 +11,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Unzip project
-        run: unzip -q Jarvis_Android_Project.zip -d project
+      - name: Find and unzip project
+        run: |
+          echo "Repo files:"; ls -la
+          ZIP=$(find . -maxdepth 2 -name '*.zip' -not -path './project/*' | head -n1)
+          if [ -z "$ZIP" ]; then echo "ERROR: repo me koi .zip file nahi mili"; exit 1; fi
+          echo "Using: $ZIP"
+          mkdir -p project
+          unzip -q -o "$ZIP" -d project
+          SETTINGS=$(find project -name settings.gradle.kts | head -n1)
+          if [ -z "$SETTINGS" ]; then echo "ERROR: zip ke andar settings.gradle.kts nahi mili"; exit 1; fi
+          echo "PROJECT_DIR=$(dirname "$SETTINGS")" >> $GITHUB_ENV
 
       - uses: actions/setup-java@v4
         with:
@@ -24,7 +33,7 @@ jobs:
           gradle-version: 8.2
 
       - name: Build debug APK
-        working-directory: project
+        working-directory: ${{ env.PROJECT_DIR }}
         run: gradle :app:assembleDebug --no-daemon
         env:
           BACKEND_URL: ${{ secrets.BACKEND_URL }}
@@ -33,4 +42,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Jarvis-APK
-          path: project/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
