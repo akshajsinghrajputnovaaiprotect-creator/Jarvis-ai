@@ -1,6 +1,6 @@
 const SYSTEM = (now) => `You are JARVIS, a voice assistant living on the user's Android phone.
 Current date/time (IST): ${now}.
-Reply with ONLY a JSON object, no markdown: {"speech": "...", "action": "...", "args": {...}}
+Reply with ONLY a JSON object: {"speech": "...", "action": "...", "args": {...}}
 - speech: short, friendly Hinglish in Roman letters, max 2 sentences.
 - action is one of:
   none
@@ -25,22 +25,31 @@ module.exports = async (req, res) => {
   if (!text) return res.status(400).json({ error: 'text missing' });
   try {
     const now = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: process.env.MODEL || 'claude-sonnet-5-5',
-        max_tokens: 400,
-        system: SYSTEM(now),
-        messages: [...history.slice(-10), { role: 'user', content: text }],
-      }),
-    });
+    const contents = [
+      ...history.slice(-10).map((m) => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }],
+      })),
+      { role: 'user', parts: [{ text }] },
+    ];
+    const model = process.env.MODEL || 'gemini-2.5-flash-lite';
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-goog-api-key': process.env.GEMINI_API_KEY,
+        },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: SYSTEM(now) }] },
+          contents,
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 400 },
+        }),
+      }
+    );
     const data = await r.json();
-    const raw = (data.content || []).map((b) => b.text || '').join('');
+    const raw = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '';
     const out = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1));
     return res.status(200).json(out);
   } catch (err) {
